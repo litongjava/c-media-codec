@@ -26,7 +26,3 @@ add_library(c_media_codec SHARED
 target_link_libraries(c_media_codec
         ${JNI_LIBRARIES}
 )
-
-if (WIN32)
-    set_target_properties(c_media_codec PROPERTIES PREFIX "")
-endif ()

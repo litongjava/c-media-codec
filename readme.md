@@ -150,7 +150,7 @@ libc_media_codec.dylib
 Windows:
 
 ```
-c_media_codec.dll
+libc_media_codec.dll
 ```
 
 ---
