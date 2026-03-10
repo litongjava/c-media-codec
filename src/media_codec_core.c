@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "g711.h"
-#include "g722_enc_dec.h"
+#include "codec/g711.h"
+#include "codec/g722_enc_dec.h"
 
 struct media_codec_encoder_s {
   int codec_type;

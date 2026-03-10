@@ -18,9 +18,11 @@ include_directories(
 add_library(c_media_codec SHARED
         src/jni_media_codec.c
         src/media_codec_core.c
-        src/g711.c
-        src/g722_encode.c
-        src/g722_decode.c
+        src/codec/g711.c
+        src/codec/g722_encode.c
+        src/codec/g722_decode.c
+        src/resampler/resample.c
+        src/media_resample.c
 )
 
 target_link_libraries(c_media_codec

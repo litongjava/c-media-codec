@@ -4,6 +4,7 @@
 
 #include "com_litongjava_media_MediaCodec.h"
 #include "media_codec_core.h"
+#include "media_resample.h"
 
 static void *jni_get_direct_buffer(JNIEnv *env, jobject buffer, jlong *capacity) {
   void *addr;
@@ -32,12 +33,20 @@ static media_codec_decoder_t *jlong_to_decoder(jlong value) {
   return (media_codec_decoder_t *)(intptr_t)value;
 }
 
+static media_resampler_t *jlong_to_resampler(jlong value) {
+  return (media_resampler_t *)(intptr_t)value;
+}
+
 static jlong encoder_to_jlong(media_codec_encoder_t *encoder) {
   return (jlong)(intptr_t)encoder;
 }
 
 static jlong decoder_to_jlong(media_codec_decoder_t *decoder) {
   return (jlong)(intptr_t)decoder;
+}
+
+static jlong resampler_to_jlong(media_resampler_t *resampler) {
+  return (jlong)(intptr_t)resampler;
 }
 
 JNIEXPORT jlong JNICALL
@@ -69,18 +78,18 @@ Java_com_litongjava_media_MediaCodec_createEncoder(JNIEnv *env,
 
 JNIEXPORT void JNICALL
 Java_com_litongjava_media_MediaCodec_destroyEncoder(JNIEnv *env,
-jclass clazz,
-  jlong encoderPtr) {
-media_codec_encoder_t *encoder;
-(void)env;
-(void)clazz;
+                                                    jclass clazz,
+                                                    jlong encoderPtr) {
+  media_codec_encoder_t *encoder;
+  (void)env;
+  (void)clazz;
 
-if (encoderPtr == 0) {
-return;
-}
+  if (encoderPtr == 0) {
+    return;
+  }
 
-encoder = jlong_to_encoder(encoderPtr);
-media_codec_destroy_encoder(encoder);
+  encoder = jlong_to_encoder(encoderPtr);
+  media_codec_destroy_encoder(encoder);
 }
 
 JNIEXPORT jint JNICALL
@@ -159,18 +168,18 @@ Java_com_litongjava_media_MediaCodec_createDecoder(JNIEnv *env,
 
 JNIEXPORT void JNICALL
 Java_com_litongjava_media_MediaCodec_destroyDecoder(JNIEnv *env,
-jclass clazz,
-  jlong decoderPtr) {
-media_codec_decoder_t *decoder;
-(void)env;
-(void)clazz;
+                                                    jclass clazz,
+                                                    jlong decoderPtr) {
+  media_codec_decoder_t *decoder;
+  (void)env;
+  (void)clazz;
 
-if (decoderPtr == 0) {
-return;
-}
+  if (decoderPtr == 0) {
+    return;
+  }
 
-decoder = jlong_to_decoder(decoderPtr);
-media_codec_destroy_decoder(decoder);
+  decoder = jlong_to_decoder(decoderPtr);
+  media_codec_destroy_decoder(decoder);
 }
 
 JNIEXPORT jint JNICALL
@@ -254,5 +263,184 @@ Java_com_litongjava_media_MediaCodec_getEncodedBytesPer20ms(JNIEnv *env,
     (int)sampleRate,
     (int)channels,
     (int)bitrate
+  );
+}
+
+/* =========================
+ * Resampler JNI
+ * ========================= */
+
+JNIEXPORT jlong JNICALL
+Java_com_litongjava_media_MediaCodec_createResampler(JNIEnv *env,
+                                                     jclass clazz,
+                                                     jint channels,
+                                                     jint inputRate,
+                                                     jint outputRate,
+                                                     jint quality,
+                                                     jint options) {
+  media_resampler_t *resampler;
+  (void)env;
+  (void)clazz;
+
+  resampler = media_resampler_create(
+    (int)channels,
+    (int)inputRate,
+    (int)outputRate,
+    (int)quality,
+    (int)options
+  );
+
+  if (resampler == NULL) {
+    return (jlong)0;
+  }
+
+  return resampler_to_jlong(resampler);
+}
+
+JNIEXPORT void JNICALL
+Java_com_litongjava_media_MediaCodec_destroyResampler(JNIEnv *env,
+                                                      jclass clazz,
+                                                      jlong resamplerPtr) {
+  media_resampler_t *resampler;
+  (void)env;
+  (void)clazz;
+
+  if (resamplerPtr == 0) {
+    return;
+  }
+
+  resampler = jlong_to_resampler(resamplerPtr);
+  media_resampler_destroy(resampler);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_litongjava_media_MediaCodec_resampleDirect(JNIEnv *env,
+                                                    jclass clazz,
+                                                    jlong resamplerPtr,
+                                                    jobject pcm16leIn,
+                                                    jint inputSamplesPerChannel,
+                                                    jobject pcm16leOut) {
+  media_resampler_t *resampler;
+  void *in_addr;
+  void *out_addr;
+  jlong in_cap_bytes = 0;
+  jlong out_cap_bytes = 0;
+  int channels;
+  jlong required_in_bytes;
+  int output_capacity_samples_per_channel;
+
+  (void)clazz;
+
+  if (resamplerPtr == 0 || pcm16leIn == NULL || pcm16leOut == NULL || inputSamplesPerChannel < 0) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  resampler = jlong_to_resampler(resamplerPtr);
+  if (resampler == NULL) {
+    return (jint)MEDIA_CODEC_ERR_STATE;
+  }
+
+  channels = media_resampler_get_channels(resampler);
+  if (channels <= 0) {
+    return (jint)MEDIA_CODEC_ERR_STATE;
+  }
+
+  in_addr = jni_get_direct_buffer(env, pcm16leIn, &in_cap_bytes);
+  if (in_addr == NULL) {
+    return (jint)MEDIA_CODEC_ERR_NOT_DIRECT;
+  }
+
+  out_addr = jni_get_direct_buffer(env, pcm16leOut, &out_cap_bytes);
+  if (out_addr == NULL) {
+    return (jint)MEDIA_CODEC_ERR_NOT_DIRECT;
+  }
+
+  required_in_bytes = (jlong)inputSamplesPerChannel * (jlong)channels * (jlong)sizeof(int16_t);
+  if (in_cap_bytes < required_in_bytes) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  output_capacity_samples_per_channel =
+    (int)(out_cap_bytes / ((jlong)channels * (jlong)sizeof(int16_t)));
+  if (output_capacity_samples_per_channel < 0) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  return (jint)media_resampler_process(
+    resampler,
+    (const int16_t *)in_addr,
+    (int)inputSamplesPerChannel,
+    (int16_t *)out_addr,
+    output_capacity_samples_per_channel
+  );
+}
+
+JNIEXPORT jint JNICALL
+Java_com_litongjava_media_MediaCodec_resetResampler(JNIEnv *env,
+                                                    jclass clazz,
+                                                    jlong resamplerPtr) {
+  media_resampler_t *resampler;
+  (void)env;
+  (void)clazz;
+
+  if (resamplerPtr == 0) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  resampler = jlong_to_resampler(resamplerPtr);
+  if (resampler == NULL) {
+    return (jint)MEDIA_CODEC_ERR_STATE;
+  }
+
+  return (jint)media_resampler_reset(resampler);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_litongjava_media_MediaCodec_setResamplerRate(JNIEnv *env,
+                                                      jclass clazz,
+                                                      jlong resamplerPtr,
+                                                      jint inputRate,
+                                                      jint outputRate) {
+  media_resampler_t *resampler;
+  (void)env;
+  (void)clazz;
+
+  if (resamplerPtr == 0) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  resampler = jlong_to_resampler(resamplerPtr);
+  if (resampler == NULL) {
+    return (jint)MEDIA_CODEC_ERR_STATE;
+  }
+
+  return (jint)media_resampler_set_rate(
+    resampler,
+    (int)inputRate,
+    (int)outputRate
+  );
+}
+
+JNIEXPORT jint JNICALL
+Java_com_litongjava_media_MediaCodec_getResamplerExpectedOutputSamples(JNIEnv *env,
+                                                                       jclass clazz,
+                                                                       jlong resamplerPtr,
+                                                                       jint inputSamplesPerChannel) {
+  media_resampler_t *resampler;
+  (void)env;
+  (void)clazz;
+
+  if (resamplerPtr == 0 || inputSamplesPerChannel < 0) {
+    return (jint)MEDIA_CODEC_ERR_ARG;
+  }
+
+  resampler = jlong_to_resampler(resamplerPtr);
+  if (resampler == NULL) {
+    return (jint)MEDIA_CODEC_ERR_STATE;
+  }
+
+  return (jint)media_resampler_get_expected_output_samples(
+    resampler,
+    (int)inputSamplesPerChannel
   );
 }
